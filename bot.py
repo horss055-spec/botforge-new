@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any
+
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -19,20 +20,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ==================== ПРОВЕРКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ ====================
-# ВРЕМЕННО ДОБАВЛЕНО ДЛЯ ДИАГНОСТИКИ
 logger.info("=" * 60)
 logger.info("НАЧАЛО ДИАГНОСТИКИ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ")
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
 
-# Логируем факт наличия переменных (НЕ САМИ ЗНАЧЕНИЯ)
+# Логируем факт наличия переменных
 logger.info(f"BOT_TOKEN присутствует в памяти?: {'ДА' if BOT_TOKEN else 'НЕТ'}")
 logger.info(f"ADMIN_CHAT_ID присутствует в памяти?: {'ДА' if ADMIN_CHAT_ID else 'НЕТ'}")
 
 # Логируем длину значений для понимания
 if BOT_TOKEN:
     logger.info(f"Длина значения BOT_TOKEN: {len(BOT_TOKEN)} символов")
-    # Показываем первые 5 и последние 5 символов для проверки формата (без риска утечки)
     logger.info(f"Начало токена: ...{BOT_TOKEN[:5] if len(BOT_TOKEN) > 5 else BOT_TOKEN}")
     logger.info(f"Конец токена: {BOT_TOKEN[-5:] if len(BOT_TOKEN) > 5 else BOT_TOKEN}...")
 else:
@@ -43,6 +43,7 @@ if ADMIN_CHAT_ID:
     logger.info(f"Значение ADMIN_CHAT_ID: {ADMIN_CHAT_ID}")
 else:
     logger.warning("ADMIN_CHAT_ID - ПУСТОЕ ЗНАЧЕНИЕ ИЛИ НЕ УСТАНОВЛЕНО")
+
 logger.info("КОНЕЦ ДИАГНОСТИКИ")
 logger.info("=" * 60)
 
@@ -159,7 +160,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
     welcome_text = """
 🤖 <b>Привет! Я создам Telegram-бота для вашего бизнеса</b>
 <b>Процесс простой и быстрый:</b>
-1. <i>Сейчас:</i> Определим задачу и функционал (5-7 минут)
+1. <i>Сейчас:</i> Определим задачей функционал (5-7 минут)
 2. <i>После заявки:</i> Разработаем и настроим бота (1-3 рабочих дня)
 3. <i>Итог:</i> Вы получаете готового, работающего бота
 <b>Поехали! Как вас зовут?</b>
@@ -265,11 +266,14 @@ async def process_budget(callback: types.CallbackQuery, state: FSMContext):
     }
     budget_text = budget_map.get(callback.data, "Ещё не решил")
     await state.update_data(budget=budget_text)
+    
     user_data = await state.get_data()
     request_id = f"REQ-{datetime.now().strftime('%Y%m%d')}-{callback.from_user.id}"
+    
     # Отправляем админу и сохраняем в файл
     await send_request_to_admin(user_data, callback.from_user.id, request_id)
     await save_to_log(user_data, request_id)
+    
     success_message = f"""
 ✅ <b>Заявка #{request_id} отправлена!</b>
 Спасибо за обращение! Наш менеджер свяжется с вами в течение 15 минут.
@@ -281,9 +285,26 @@ async def process_budget(callback: types.CallbackQuery, state: FSMContext):
 5. Запускаем в работу!
 📞 <b>По вопросам:</b> @botforge_support
 """
+    # 1. Редактируем старое сообщение с итогами
     await callback.message.edit_text(success_message, parse_mode="HTML")
     await callback.answer()
+
+    # 2. Очищаем состояние от старых данных
     await state.clear()
+
+    # 3. НЕМЕДЛЕННО отправляем новое приветствие и запускаем новый диалог
+    new_welcome_text = """
+🤖 <b>Привет! Я создам Telegram-бота для вашего бизнеса</b>
+<b>Процесс простой и быстрый:</b>
+1. <i>Сейчас:</i> Определим задачу и функционал (5-7 минут)
+2. <i>После заявки:</i> Разработаем и настроим бота (1-3 рабочих дня)
+3. <i>Итог:</i> Вы получаете готового, работающего бота
+<b>Поехали! Как вас зовут?</b>
+"""
+    # Отправляем новое сообщение, а не редактируем старое
+    await callback.message.answer(new_welcome_text, parse_mode="HTML")
+    # Устанавливаем состояние "ожидаем имя" для НОВОГО диалога
+    await state.set_state(BotRequest.waiting_for_name)
 
 # ==================== ЗАПУСК БОТА ====================
 async def main():
